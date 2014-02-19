@@ -174,7 +174,7 @@ namespace Ubitrack { namespace Driver {
 		// Convert euler angles (in degree) to quaternion
 		Math::Quaternion q = euler2Quat( rawFaroData[3] * M_PI/180 , rawFaroData[4] * M_PI/180, rawFaroData[5] * M_PI/180 );
 		//Converting mm to m
-		Math::Vector < 3 >  pos ( rawFaroData[0] / 1000, rawFaroData[1] / 1000, rawFaroData[2] / 1000 );
+		Math::Vector3d  pos ( rawFaroData[0] / 1000, rawFaroData[1] / 1000, rawFaroData[2] / 1000 );
 		Math::Pose pose ( q, pos);
 		Measurement::Pose MeasPose( timestamp, pose );
 		m_outPort.send( MeasPose);

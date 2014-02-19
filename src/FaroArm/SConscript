@@ -2,6 +2,8 @@ import sys
 import glob
 import os.path
 
+Import('*')
+
 if not have_farosdk:
 	print "Not building the FARO Arm driver: FARO SDK not available"
 else:
