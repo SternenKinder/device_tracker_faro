@@ -1,0 +1,23 @@
+import sys
+import glob
+import os.path
+
+if not have_farosdk:
+	print "Not building the FARO Arm driver: FARO SDK not available"
+else:
+	# import variables from other scons files
+	Import( '*' )
+	env = masterEnv.Clone()
+
+	env.AppendUnique( **mergeOptions( utdataflow_all_options, utcomponents_options, farosdk_options ) )
+
+	# create component libraries
+	comp_sources = globSourceFiles( '*.cpp' )
+
+	# compile components as shared libraries
+	setupComponentBuild(env, comp_sources, 'faroarm')
+
+sources = globSourceFiles( '*.cpp' )
+headers = globSourceFiles( '*.h' )
+createVisualStudioProject(env, sources, headers, 'faroarm-Component')
+
