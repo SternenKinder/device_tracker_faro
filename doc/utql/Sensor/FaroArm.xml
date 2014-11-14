@@ -38,6 +38,47 @@
         </DataflowConfiguration>
     </Pattern>
     
+    <Pattern name="FaroArmWithLatency" displayName="Faro Arm Mechanical Tracking with Latency">
+        <Description><h:p>This component provides pose measurements from a Faro Arm.</h:p></Description>
+        <Input>
+            <Node name="A" displayName="Sensor 1 (Reference)"/>
+            <Node name="B" displayName="Sensor 2 (Difference)"/>
+            
+            <Edge name="Latency" source="A" destination="B" displayName="Time difference [ms]">
+                <Description><h:p>The delay between the reference and this sensors' data measurements.</h:p></Description>
+                <Predicate>type=='Distance'&amp;&amp;mode=='push'</Predicate>
+            </Edge>
+        </Input>    
+        <Output>
+            <Node name="FaroArm" displayName="Faro Arm Tip"/>
+            <Node name="FaroBase" displayName="Faro Arm Base"/>
+            <Node name="FaroButtons" displayName="Faro Buttons"/>
+            
+            <Edge name="Output" source="FaroBase" destination="FaroArm" displayName="Pose">
+                <Description><h:p>Pose of Faro Arm in respect to Faro Arm Base.</h:p></Description>
+                <Attribute name="type" value="6D" xsi:type="EnumAttributeReferenceType"/>
+                <Attribute name="mode" value="push" xsi:type="EnumAttributeReferenceType"/>
+            </Edge>
+            
+            <Edge name="Button1" source="FaroBase" destination="FaroButtons" displayName="Button (Green)">
+                <Description><h:p>Green Button of Faro Arm.</h:p></Description>
+                <Attribute name="type" value="Button" xsi:type="EnumAttributeReferenceType"/>
+                <Attribute name="mode" value="push" xsi:type="EnumAttributeReferenceType"/>
+            </Edge>
+            
+            <Edge name="Button2" source="FaroBase" destination="FaroButtons" displayName="Button (Red)">
+                <Description><h:p>Red Button of Faro Arm.</h:p></Description>
+                <Attribute name="type" value="Button" xsi:type="EnumAttributeReferenceType"/>
+                <Attribute name="mode" value="push" xsi:type="EnumAttributeReferenceType"/>
+            </Edge>
+        </Output>
+        
+        <DataflowConfiguration>
+            <UbitrackLib class="FaroArm"/>
+            <Attribute name="frequency" displayName="Frequency" default="50"  min="1" max="600" xsi:type="IntAttributeDeclarationType"/>
+        </DataflowConfiguration>
+    </Pattern>
+
     <!-- Attribute declarations -->
 	
     <GlobalNodeAttributeDeclarations>

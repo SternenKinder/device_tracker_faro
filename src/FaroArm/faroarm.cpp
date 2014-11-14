@@ -59,8 +59,12 @@ namespace Ubitrack { namespace Driver {
 		, m_outPort( "Output", *this )
 		, m_outButton1( "Button1", *this )
 		, m_outButton2( "Button2", *this )
+		, m_latencyPort("Latency", *this, boost::bind( &FaroArmDriver::receiveLatency, this, _1 ) )
 		, m_bStop( true )
 		, m_frequency( 50 )
+		, m_synchronizer( 50 ) // assume 50 Hz for timestamp synchronization
+		, m_latency( 0 )
+		, m_last_pose()
 	{
 		stop( );
 		subgraph->m_DataflowAttributes.getAttributeData ( "frequency", m_frequency );
@@ -109,9 +113,15 @@ namespace Ubitrack { namespace Driver {
 		while ( !m_bStop ) //Starting main loop
 		{
 			Measurement::Timestamp timestamp = Measurement::now();
+			// subtract the approximate processing time of the cameras and DTrack (19ms)
+			// (daniel) better synchronize the DTrack controller to a common NTP server and use "ts" fields directly.
+			//          This should work well at least with ARTtrack2/3 cameras (not necessarily ARTtrack/TP)
+			timestamp -= m_latency;
+
 			switch( theUpdateStruct.cUpdateFlag )
 			{
 			case CMM_UPDATE_DETECT: // new measurement
+			  timestamp = m_synchronizer.convertNativeToLocal( theUpdateStruct.lTimeStamp, timestamp );
 			  sendPose( timestamp, theUpdateStruct.dPosition );
 			  if ( m_outButton1.isConnected() ) {
 				  if(theUpdateStruct.cFrontButton == 1) {
@@ -141,8 +151,10 @@ namespace Ubitrack { namespace Driver {
 			  break;
 			}
 			
+			theUpdateStruct.cUpdateFlag = 0;
+
 			// covert frequency given in Hz into ms
-			Util::sleep( ( int ) ( 1000.0 / m_frequency ) );
+			//Util::sleep( ( int ) ( 1000.0 / m_frequency ) );
 		}
 		
 
@@ -176,8 +188,13 @@ namespace Ubitrack { namespace Driver {
 		//Converting mm to m
 		Math::Vector3d  pos ( rawFaroData[0] / 1000, rawFaroData[1] / 1000, rawFaroData[2] / 1000 );
 		Math::Pose pose ( q, pos);
-		Measurement::Pose MeasPose( timestamp, pose );
-		m_outPort.send( MeasPose);
+		if (pose != m_last_pose) {
+			Measurement::Pose MeasPose( timestamp, pose );
+			m_outPort.send( MeasPose);
+			m_last_pose = pose;
+		} else {
+			LOG4CPP_WARN( logger, "FaroArm: Duplicate pose detected, skipping ..." );
+		}
 	}
 	
 	void FaroArmDriver::close( HMODULE hArmLib, int ( *pCmmSpecific )( void * ) )
@@ -210,6 +227,14 @@ namespace Ubitrack { namespace Driver {
 			m_pThread.reset( new boost::thread( boost::bind( &FaroArmDriver::threadMethod, this ) ) );
 		}
 	}
+
+	void FaroArmDriver::receiveLatency( const Measurement::Distance& m ) {
+		double l = *m;
+		LOG4CPP_DEBUG( logger , "FaroArmDriver received new latency measurement in ms: " << l );
+		// convert ms to timestamp offset
+		m_latency = (long int)(1000000.0 * l);
+	};
+
 
 UBITRACK_REGISTER_COMPONENT( Ubitrack::Dataflow::ComponentFactory* const cf ) {
 	cf->registerComponent< Ubitrack::Driver::FaroArmDriver > ( "FaroArm" );

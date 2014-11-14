@@ -36,7 +36,9 @@
 #include <utDataflow/Component.h>
 #include <utDataflow/ComponentFactory.h>
 #include <utDataflow/PushSupplier.h>
+#include <utDataflow/PushConsumer.h>
 #include <utMeasurement/Measurement.h>
+#include <utMeasurement/TimestampSync.h>
 #include <utUtil/Exception.h>
 
 #include <boost/thread.hpp>
@@ -66,6 +68,7 @@ protected:
 	Dataflow::PushSupplier< Measurement::Pose > m_outPort;
 	Dataflow::PushSupplier< Measurement::Button > m_outButton1;
 	Dataflow::PushSupplier< Measurement::Button > m_outButton2;
+	Dataflow::PushConsumer< Measurement::Distance > m_latencyPort;
 
 	/** method for closing  connection to Faro Arm*/
 	void close ( HMODULE hArmLib, int ( *pCmmSpecific )( void * ) );
@@ -75,6 +78,9 @@ protected:
 	
 	/** transforms the faro-euler angles to correct rotation */
 	Math::Quaternion euler2Quat( double heading, double attitude, double bank ) ;
+
+	/** receive latency **/
+	void receiveLatency( const Measurement::Distance& m );
 
 	/** thread method */
 	void threadMethod( );
@@ -88,6 +94,14 @@ protected:
 		/** thread is running?*/
 	unsigned int m_frequency;
 	
+	/** latency compensation **/
+	Measurement::TimestampSync m_synchronizer;
+	long int m_latency;
+
+	/** avoid duplicate measurements **/
+	Math::Pose m_last_pose;
+
+
 };
 
 } } // namespace Ubitrack::Drivers
