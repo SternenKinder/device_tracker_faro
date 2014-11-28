@@ -44,6 +44,7 @@
 #include <utUtil/OS.h>
 
 #include <log4cpp/Category.hh>
+#include <utUtil/BlockTimer.h>
 static log4cpp::Category& logger( log4cpp::Category::getInstance( "Drivers.FaroArm" ) );
 
 //Function necessary for using FARO ARM SDK
@@ -61,8 +62,8 @@ namespace Ubitrack { namespace Driver {
 		, m_outButton2( "Button2", *this )
 		, m_latencyPort("Latency", *this, boost::bind( &FaroArmDriver::receiveLatency, this, _1 ) )
 		, m_bStop( true )
-		, m_frequency( 50 )
-		, m_synchronizer( 50 ) // assume 50 Hz for timestamp synchronization
+		, m_frequency( 60 )
+		, m_synchronizer( 240 ) // assume 50 Hz for timestamp synchronization
 		, m_latency( 0 )
 		, m_last_pose()
 	{
@@ -98,6 +99,7 @@ namespace Ubitrack { namespace Driver {
 		}
 		
 		struct PositionUpdate theUpdateStruct;
+		struct PositionUpdate theUpdateStructLocal;
 		memset( &theUpdateStruct, 0x0, sizeof(struct PositionUpdate) );
 		theUpdateStruct.nFuncType = DLL_POS_UPDATE;
 		theUpdateStruct.unKey = GOOD_KEY;
@@ -110,21 +112,42 @@ namespace Ubitrack { namespace Driver {
 		
 		LOG4CPP_INFO( logger, "FaroArm connected" );
 		bool isButton1EventSend = false;
+
+		Ubitrack::Util::BlockTimer faroUpdateTimer( "faroUpdate", "Drivers.FaroArm" );
+
 		while ( !m_bStop ) //Starting main loop
 		{
-			Measurement::Timestamp timestamp = Measurement::now();
-			// subtract the approximate processing time of the cameras and DTrack (19ms)
-			// (daniel) better synchronize the DTrack controller to a common NTP server and use "ts" fields directly.
-			//          This should work well at least with ARTtrack2/3 cameras (not necessarily ARTtrack/TP)
-			timestamp -= m_latency;
-
-			switch( theUpdateStruct.cUpdateFlag )
+			DWORD dwWaitResult = WaitForSingleObject( theUpdateStruct.hPositionUpdateEvent, 400 );
+			if( dwWaitResult == WAIT_TIMEOUT )
 			{
-			case CMM_UPDATE_DETECT: // new measurement
-			  timestamp = m_synchronizer.convertNativeToLocal( theUpdateStruct.lTimeStamp, timestamp );
-			  sendPose( timestamp, theUpdateStruct.dPosition );
+				// device is busy or something. USB arm might be at an end stop if end stops are enabled
+				LOG4CPP_WARN(logger, "timeout" );
+				continue;
+			}
+
+
+			Measurement::Timestamp timestamp = Measurement::now();		
+			memcpy(&theUpdateStructLocal,&theUpdateStruct, sizeof(struct PositionUpdate));
+
+			theUpdateStruct.cUpdateFlag = 0;
+			ResetEvent(theUpdateStruct.hPositionUpdateEvent);
+
+			
+
+			
+
+			switch( theUpdateStructLocal.cUpdateFlag )
+			{
+			case CMM_UPDATE_DETECT:{ // new measurement
+				UBITRACK_TIME( faroUpdateTimer );
+			  //LOG4CPP_INFO(logger, "timediff test:" << (unsigned long) theUpdateStructLocal.lTimeStamp << " : " << timestamp << " : " << timestamp - theUpdateStructLocal.lTimeStamp );			  
+				timestamp = m_synchronizer.convertNativeToLocal( (unsigned long) theUpdateStructLocal.lTimeStamp, timestamp );
+				timestamp -= m_latency;
+			  
+
+			  sendPose( timestamp, theUpdateStructLocal.dPosition );
 			  if ( m_outButton1.isConnected() ) {
-				  if(theUpdateStruct.cFrontButton == 1) {
+				  if(theUpdateStructLocal.cFrontButton == 1) {
 						if(!isButton1EventSend) {
 							m_outButton1.send( Measurement::Button( timestamp, Math::Scalar < int > ( ' ' ) ) );
 							isButton1EventSend = true;
@@ -134,12 +157,14 @@ namespace Ubitrack { namespace Driver {
 					  isButton1EventSend = false;
 				  }
 			  }
-			    
+				
+								   
 			  
-			  if( theUpdateStruct.cBackButton && m_outButton2.isConnected() )
+			  if( theUpdateStructLocal.cBackButton && m_outButton2.isConnected() )
 			    m_outButton2.send( Measurement::Button( timestamp, Math::Scalar < int > ( ' ' ) ) );
 			  
 			  break;
+			}
 			case CMM_TIMEOUT_DETECT:
 			  LOG4CPP_WARN( logger, "FaroArm: Timeout occurred in communication with arm. Abort\n" );
 			  break;
@@ -149,14 +174,18 @@ namespace Ubitrack { namespace Driver {
 			case CMM_INACCURATE_DATA_DETECT:
 			  LOG4CPP_WARN( logger, "FaroArm: Inaccurate data detected by arm. Not sending" );
 			  break;
+			
+
 			}
 			
-			theUpdateStruct.cUpdateFlag = 0;
+			
+			
 
 			// covert frequency given in Hz into ms
-			//Util::sleep( ( int ) ( 1000.0 / m_frequency ) );
+			//Util::sleep( ( int ) ( 1000.0 / 120 ) );
 		}
 		
+		LOG4CPP_INFO (logger, "Timings:" << faroUpdateTimer );
 
 		close( hArmLib, pCmmSpecific );
 		LOG4CPP_INFO (logger, "FaroArm disconnected" );
@@ -188,13 +217,13 @@ namespace Ubitrack { namespace Driver {
 		//Converting mm to m
 		Math::Vector3d  pos ( rawFaroData[0] / 1000, rawFaroData[1] / 1000, rawFaroData[2] / 1000 );
 		Math::Pose pose ( q, pos);
-		if (pose != m_last_pose) {
+		//if (pose != m_last_pose) {
 			Measurement::Pose MeasPose( timestamp, pose );
 			m_outPort.send( MeasPose);
 			m_last_pose = pose;
-		} else {
-			LOG4CPP_WARN( logger, "FaroArm: Duplicate pose detected, skipping ..." );
-		}
+		//} else {
+		//	LOG4CPP_WARN( logger, "FaroArm: Duplicate pose detected, skipping ..." );
+		//}
 	}
 	
 	void FaroArmDriver::close( HMODULE hArmLib, int ( *pCmmSpecific )( void * ) )
