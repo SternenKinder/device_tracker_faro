@@ -27,6 +27,7 @@
  * Implementation of the Faro Arm Driver to convert the values of the faro arm to ubitrack.
  *
  * @author Christian Waechter <christian.waechter@in.tum.de>
+ * @author Frieder Pankratz <pankratz@in.tum.de>
  */
  
 #include "faroarm.h"
