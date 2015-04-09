@@ -75,121 +75,133 @@ namespace Ubitrack { namespace Driver {
 	
 	void FaroArmDriver::threadMethod()
 	{
-		LOG4CPP_DEBUG( logger, "Faro Arm thread started" );
-		//Initalize the Faro Arm
-		
-		unsigned int counter = 0;
-		
-		LOG4CPP_DEBUG( logger, "Loading FaroArmUsbWrapper.dll");
-		HMODULE hArmLib = LoadLibrary( "FaroArmUsbWrapper.dll" );
-		if( NULL == hArmLib )
-			UBITRACK_THROW( "FaroArm: Could not load FaroArmUsbWrapper.dll!" );
+		try{
+			LOG4CPP_DEBUG(logger, "Faro Arm thread started");
+			//Initalize the Faro Arm
 
-		int (*pCmmSpecific)(void *);
-		pCmmSpecific = (BOOL (*)(VOID *))GetProcAddress( hArmLib, "CmmSpecific" );
-		
-		if( NULL == pCmmSpecific )
-			pCmmSpecific = (BOOL (*)(VOID *))FalseSpecific;
+			unsigned int counter = 0;
 
-		// Open device
-		struct vOpenInfo theOpenStruct = { DLL_OPEN_CMM, NULL, L"\0", NULL };
-		if( ! ( TRUE == pCmmSpecific( (void *)&theOpenStruct) ) )
-		{
-			UBITRACK_THROW( "FaroArm: Could not find arm!\n" );
-			close( hArmLib, pCmmSpecific );
-		}
-		
-		struct PositionUpdate theUpdateStruct;
-		struct PositionUpdate theUpdateStructLocal;
-		memset( &theUpdateStruct, 0x0, sizeof(struct PositionUpdate) );
-		theUpdateStruct.nFuncType = DLL_POS_UPDATE;
-		theUpdateStruct.unKey = GOOD_KEY;
+			LOG4CPP_DEBUG(logger, "Loading FaroArmUsbWrapper.dll");
+			HMODULE hArmLib = LoadLibrary("FaroArmUsbWrapper.dll");
+			if (NULL == hArmLib)
+				UBITRACK_THROW("FaroArm: Could not load FaroArmUsbWrapper.dll!");
 
-		if( !( TRUE == pCmmSpecific( (void *)&theUpdateStruct) ) )
-		{
-			UBITRACK_THROW( "FaroArm: Could not register update struct!\n" );
-			close( hArmLib, pCmmSpecific );			
-		}
-		
-		LOG4CPP_INFO( logger, "FaroArm connected" );
-		bool isButton1EventSend = false;
+			int(*pCmmSpecific)(void *);
+			pCmmSpecific = (BOOL(*)(VOID *))GetProcAddress(hArmLib, "CmmSpecific");
 
-		Ubitrack::Util::BlockTimer faroUpdateTimer( "faroUpdate", "Drivers.FaroArm" );
+			if (NULL == pCmmSpecific)
+				pCmmSpecific = (BOOL(*)(VOID *))FalseSpecific;
 
-		while ( !m_bStop ) //Starting main loop
-		{
-			DWORD dwWaitResult = WaitForSingleObject( theUpdateStruct.hPositionUpdateEvent, 400 );
-			if( dwWaitResult == WAIT_TIMEOUT )
+			// Open device
+			struct vOpenInfo theOpenStruct = { DLL_OPEN_CMM, NULL, L"\0", NULL };
+			if (!(TRUE == pCmmSpecific((void *)&theOpenStruct)))
 			{
-				// device is busy or something. USB arm might be at an end stop if end stops are enabled
-				LOG4CPP_WARN(logger, "timeout" );
-				continue;
+				UBITRACK_THROW("FaroArm: Could not find arm!\n");
+				close(hArmLib, pCmmSpecific);
 			}
 
+			struct PositionUpdate theUpdateStruct;
+			struct PositionUpdate theUpdateStructLocal;
+			memset(&theUpdateStruct, 0x0, sizeof(struct PositionUpdate));
+			theUpdateStruct.nFuncType = DLL_POS_UPDATE;
+			theUpdateStruct.unKey = GOOD_KEY;
 
-			Measurement::Timestamp timestamp = Measurement::now();		
-			memcpy(&theUpdateStructLocal,&theUpdateStruct, sizeof(struct PositionUpdate));
-
-			theUpdateStruct.cUpdateFlag = 0;
-			ResetEvent(theUpdateStruct.hPositionUpdateEvent);
-
-			
-
-			
-
-			switch( theUpdateStructLocal.cUpdateFlag )
+			if (!(TRUE == pCmmSpecific((void *)&theUpdateStruct)))
 			{
-			case CMM_UPDATE_DETECT:{ // new measurement
-				UBITRACK_TIME( faroUpdateTimer );
-			  //LOG4CPP_INFO(logger, "timediff test:" << (unsigned long) theUpdateStructLocal.lTimeStamp << " : " << timestamp << " : " << timestamp - theUpdateStructLocal.lTimeStamp );			  
-				timestamp = m_synchronizer.convertNativeToLocal( (unsigned long) theUpdateStructLocal.lTimeStamp, timestamp );
-				timestamp -= m_latency;
-			  
+				UBITRACK_THROW("FaroArm: Could not register update struct!\n");
+				close(hArmLib, pCmmSpecific);
+			}
 
-			  sendPose( timestamp, theUpdateStructLocal.dPosition );
-			  if ( m_outButton1.isConnected() ) {
-				  if(theUpdateStructLocal.cFrontButton == 1) {
-						if(!isButton1EventSend) {
-							m_outButton1.send( Measurement::Button( timestamp, Math::Scalar < int > ( ' ' ) ) );
-							isButton1EventSend = true;
+			LOG4CPP_INFO(logger, "FaroArm connected");
+			bool isButton1EventSend = false;
+
+			Ubitrack::Util::BlockTimer faroUpdateTimer("faroUpdate", "Drivers.FaroArm");
+
+			while (!m_bStop) //Starting main loop
+			{
+				DWORD dwWaitResult = WaitForSingleObject(theUpdateStruct.hPositionUpdateEvent, 400);
+				if (dwWaitResult == WAIT_TIMEOUT)
+				{
+					// device is busy or something. USB arm might be at an end stop if end stops are enabled
+					LOG4CPP_WARN(logger, "timeout");
+					continue;
+				}
+
+
+				Measurement::Timestamp timestamp = Measurement::now();
+				memcpy(&theUpdateStructLocal, &theUpdateStruct, sizeof(struct PositionUpdate));
+
+				theUpdateStruct.cUpdateFlag = 0;
+				ResetEvent(theUpdateStruct.hPositionUpdateEvent);
+
+
+
+
+
+				switch (theUpdateStructLocal.cUpdateFlag)
+				{
+				case CMM_UPDATE_DETECT:{ // new measurement
+					UBITRACK_TIME(faroUpdateTimer);
+					//LOG4CPP_INFO(logger, "timediff test:" << (unsigned long) theUpdateStructLocal.lTimeStamp << " : " << timestamp << " : " << timestamp - theUpdateStructLocal.lTimeStamp );			  
+					timestamp = m_synchronizer.convertNativeToLocal((unsigned long)theUpdateStructLocal.lTimeStamp, timestamp);
+					timestamp -= m_latency;
+
+
+					sendPose(timestamp, theUpdateStructLocal.dPosition);
+					if (m_outButton1.isConnected()) {
+						if (theUpdateStructLocal.cFrontButton == 1) {
+							if (!isButton1EventSend) {
+								m_outButton1.send(Measurement::Button(timestamp, Math::Scalar < int >(' ')));
+								isButton1EventSend = true;
+							}
+
 						}
-							
-				  } else {
-					  isButton1EventSend = false;
-				  }
-			  }
-				
-								   
-			  
-			  if( theUpdateStructLocal.cBackButton && m_outButton2.isConnected() )
-			    m_outButton2.send( Measurement::Button( timestamp, Math::Scalar < int > ( ' ' ) ) );
-			  
-			  break;
-			}
-			case CMM_TIMEOUT_DETECT:
-			  LOG4CPP_WARN( logger, "FaroArm: Timeout occurred in communication with arm. Abort\n" );
-			  break;
-			case CMM_ERROR_DETECT:
-			  LOG4CPP_ERROR( logger, "FaroArm: Error reported by arm: %i\n" );
-			  break;
-			case CMM_INACCURATE_DATA_DETECT:
-			  LOG4CPP_WARN( logger, "FaroArm: Inaccurate data detected by arm. Not sending" );
-			  break;
-			
+						else {
+							isButton1EventSend = false;
+						}
+					}
 
-			}
-			
-			
-			
 
-			// covert frequency given in Hz into ms
-			//Util::sleep( ( int ) ( 1000.0 / 120 ) );
+
+					if (theUpdateStructLocal.cBackButton && m_outButton2.isConnected())
+						m_outButton2.send(Measurement::Button(timestamp, Math::Scalar < int >(' ')));
+
+					break;
+				}
+				case CMM_TIMEOUT_DETECT:
+					LOG4CPP_WARN(logger, "FaroArm: Timeout occurred in communication with arm. Abort\n");
+					break;
+				case CMM_ERROR_DETECT:
+					LOG4CPP_ERROR(logger, "FaroArm: Error reported by arm: %i\n");
+					break;
+				case CMM_INACCURATE_DATA_DETECT:
+					LOG4CPP_WARN(logger, "FaroArm: Inaccurate data detected by arm. Not sending");
+					break;
+
+
+				}
+
+
+
+
+				// covert frequency given in Hz into ms
+				//Util::sleep( ( int ) ( 1000.0 / 120 ) );
+			}
+
+			LOG4CPP_INFO(logger, "Timings:" << faroUpdateTimer);
+
+			close(hArmLib, pCmmSpecific);
+			LOG4CPP_INFO(logger, "FaroArm disconnected");
 		}
-		
-		LOG4CPP_INFO (logger, "Timings:" << faroUpdateTimer );
-
-		close( hArmLib, pCmmSpecific );
-		LOG4CPP_INFO (logger, "FaroArm disconnected" );
+		catch (std::runtime_error e) {
+			LOG4CPP_ERROR(logger, "RuntimeError: "<< e.what());
+		}
+		catch (std::exception e) {
+			LOG4CPP_ERROR(logger, "Exception: " << e.what());
+		}
+		catch (...) {
+			LOG4CPP_ERROR(logger, "Undefined error" );
+		}
 	}
 	
 	Math::Quaternion FaroArmDriver::euler2Quat( double heading, double attitude, double bank )
